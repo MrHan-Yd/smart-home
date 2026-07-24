@@ -6,6 +6,11 @@ a.nav-item {
   text-decoration: none;
 }
 
+/* 全局 .muted 兜底：部分视图以动态 class 使用（如 SettingsView），无全局定义时无样式 */
+.muted {
+  color: hsl(var(--muted-foreground));
+}
+
 /* ensure --destructive alias for toast */
 :root,
 html[data-theme="dark"] {

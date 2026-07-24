@@ -39,6 +39,7 @@ type Config struct {
 	HassToken        string
 	HassTimeout      time.Duration
 	ReadyzRequireHA  bool
+	HATokenEncKey    string
 }
 
 func (c Config) HTTPAddr() string {
@@ -98,6 +99,7 @@ func Load() (Config, error) {
 		HassToken:       getenv("HASS_TOKEN", ""),
 		HassTimeout:     hassTimeout,
 		ReadyzRequireHA: getenvBool("READYZ_REQUIRE_HA", false),
+		HATokenEncKey:   strings.TrimSpace(getenv("HA_TOKEN_ENC_KEY", "")),
 	}
 
 	if cfg.DatabaseURL == "" {

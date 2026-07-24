@@ -1,15 +1,18 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/demo/smart-home/backend/internal/adapter/hass"
 	"github.com/demo/smart-home/backend/internal/auth"
 	"github.com/demo/smart-home/backend/internal/middleware"
+	"github.com/demo/smart-home/backend/internal/module/actionlog"
 	"github.com/demo/smart-home/backend/internal/module/device"
 	"github.com/demo/smart-home/backend/internal/pkg/apperr"
 	"github.com/demo/smart-home/backend/internal/pkg/response"
@@ -59,6 +62,19 @@ func (s *Server) handleDiscoverEntities(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		response.Fail(w, http.StatusInternalServerError, apperr.CodeDB, "查询设备失败")
 		return
+	}
+	// also mark composite member entity_ids as already_added (so they don't show as addable)
+	if home, _ := s.homes.EnsureDefault(r.Context(), p.UserID); home != nil {
+		owner, _ := s.homes.Owner(r.Context(), home.ID)
+		if owner != uuid.Nil {
+			if memberEIDs, err := s.devices.EntityIDsByUserWithMembers(r.Context(), owner); err == nil {
+				for _, eid := range memberEIDs {
+					if _, ok := added[eid]; !ok {
+						added[eid] = uuid.Nil
+					}
+				}
+			}
+		}
 	}
 
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
@@ -192,11 +208,13 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	roomNames, _ := s.rooms.NameByID(r.Context(), *homeID)
+
 	onlyCtrl := r.URL.Query().Get("controllable") == "true"
 	views := make([]map[string]any, 0, len(devs))
 	for _, d := range devs {
 		st, ok := stateMap[d.EntityID]
-		view := s.deviceView(d, st, ok, false)
+		view := s.deviceView(d, st, ok, false, roomNames)
 		if onlyCtrl {
 			if cl, _ := view["control_level"].(string); cl == "read_only" {
 				continue
@@ -234,7 +252,7 @@ func (s *Server) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 			ok = true
 		}
 	}
-	response.OK(w, s.deviceView(*d, st, ok, true))
+	response.OK(w, s.deviceView(*d, st, ok, true, nil))
 }
 
 func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +317,7 @@ func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 			ok = true
 		}
 	}
-	response.JSON(w, http.StatusCreated, 0, "ok", s.deviceView(*created, st, ok, true))
+	response.JSON(w, http.StatusCreated, 0, "ok", s.deviceView(*created, st, ok, true, nil))
 }
 
 func (s *Server) handleBatchCreateDevices(w http.ResponseWriter, r *http.Request) {
@@ -344,6 +362,96 @@ func (s *Server) handleBatchCreateDevices(w http.ResponseWriter, r *http.Request
 		})
 	}
 	response.OK(w, map[string]any{"created": created, "skipped": skipped})
+}
+
+// handleCreateCompositeDevice creates one device row bound to multiple entities.
+// The first entity (or primary_entity_id) becomes the device's primary entity
+// and domain; meta.kind = "composite"; device_members stores all bindings.
+func (s *Server) handleCreateCompositeDevice(w http.ResponseWriter, r *http.Request) {
+	p := s.requireUser(w, r)
+	if p == nil {
+		return
+	}
+	homeID := s.userHome(w, r, p.UserID)
+	if homeID == nil {
+		return
+	}
+	var body struct {
+		EntityIDs       []string  `json:"entity_ids"`
+		PrimaryEntityID string    `json:"primary_entity_id"`
+		Name            *string   `json:"name"`
+		RoomID          *uuid.UUID `json:"room_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.EntityIDs) < 2 {
+		response.Fail(w, http.StatusBadRequest, apperr.CodeBadRequest, "至少选择 2 个实体")
+		return
+	}
+	// normalize + validate
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(body.EntityIDs))
+	for _, eid := range body.EntityIDs {
+		eid = strings.TrimSpace(eid)
+		if hass.DomainOf(eid) == "" || seen[eid] {
+			continue
+		}
+		seen[eid] = true
+		ids = append(ids, eid)
+	}
+	if len(ids) < 2 {
+		response.Fail(w, http.StatusBadRequest, apperr.CodeBadRequest, "至少选择 2 个有效实体")
+		return
+	}
+	primary := strings.TrimSpace(body.PrimaryEntityID)
+	if primary == "" {
+		primary = ids[0]
+	}
+	if !seen[primary] {
+		primary = ids[0]
+	}
+	domain := hass.DomainOf(primary)
+
+	// verify each entity exists in HA (if configured)
+	if s.hass != nil && s.hass.Configured() {
+		for _, eid := range ids {
+			if _, err := s.hass.GetState(r.Context(), eid); err != nil {
+				if errors.Is(err, hass.ErrEntityNotFound) {
+					response.Fail(w, http.StatusNotFound, apperr.CodeNotFound, "HA 中不存在实体: "+eid)
+					return
+				}
+				response.Fail(w, http.StatusBadGateway, apperr.CodeHA, "校验 HA 实体失败")
+				return
+			}
+		}
+	}
+
+	meta, _ := json.Marshal(device.DeviceMeta{Kind: "composite", EntityIDs: ids})
+	d := device.Device{
+		HomeID:   *homeID,
+		UserID:   p.UserID,
+		EntityID: primary,
+		Domain:   domain,
+		Name:     body.Name,
+		RoomID:   body.RoomID,
+		Meta:     meta,
+	}
+	created, err := s.devices.Create(r.Context(), d)
+	if err != nil {
+		if isUniqueViolation(err) {
+			response.Fail(w, http.StatusConflict, apperr.CodeConflict, "主实体已添加为独立设备")
+			return
+		}
+		s.log.Error("create composite device", "err", err)
+		response.Fail(w, http.StatusInternalServerError, apperr.CodeDB, "创建失败")
+		return
+	}
+	if err := s.devices.SetMembers(r.Context(), created.ID, primary, ids); err != nil {
+		s.log.Error("set members", "err", err)
+		response.Fail(w, http.StatusInternalServerError, apperr.CodeDB, "写入成员失败")
+		return
+	}
+	s.refreshHubTracking(context.Background(), *homeID)
+
+	response.JSON(w, http.StatusCreated, 0, "ok", s.deviceView(*created, hass.State{}, false, true, nil))
 }
 
 func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +502,7 @@ func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
 			ok = true
 		}
 	}
-	response.OK(w, s.deviceView(*d, st, ok, true))
+	response.OK(w, s.deviceView(*d, st, ok, true, nil))
 }
 
 func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
@@ -499,14 +607,73 @@ func (s *Server) handleDeviceAction(w http.ResponseWriter, r *http.Request) {
 		response.Fail(w, http.StatusBadRequest, apperr.CodeUnsupported, err.Error())
 		return
 	}
-	if err := s.hass.CallService(r.Context(), svcDomain, service, data); err != nil {
-		s.log.Error("call service", "err", err, "entity", d.EntityID, "service", service)
+
+	// composite device: apply the same action to each member entity.
+	if _, kind := deviceMetaKind(d.Meta); kind == "composite" {
+		memberIDs, _ := s.devices.EntityIDsByDevice(r.Context(), d.ID)
+		if len(memberIDs) == 0 {
+			memberIDs = []string{d.EntityID}
+		}
+		start := time.Now()
+		var firstErr error
+		for _, eid := range memberIDs {
+			mDomain := hass.DomainOf(eid)
+			_, mLevel := hass.InferCapabilities(mDomain, nil)
+			if !hass.ActionAllowed(mDomain, body.Action, mLevel) {
+				continue
+			}
+			mSvc, mService, mData, mErr := hass.ResolveAction(mDomain, body.Action, body.Params, eid)
+			if mErr != nil {
+				if firstErr == nil {
+					firstErr = mErr
+				}
+				continue
+			}
+			if e := s.hass.CallService(r.Context(), mSvc, mService, mData); e != nil {
+				if firstErr == nil {
+					firstErr = e
+				}
+				s.log.Warn("composite call service", "err", e, "entity", eid)
+			}
+		}
+		dur := int(time.Since(start).Milliseconds())
+		if firstErr != nil {
+			if idemKey != "" {
+				s.sessions.ReleaseIdempotency(r.Context(), p.SID, idemKey)
+			}
+			msg := firstErr.Error()
+			s.audit(r.Context(), p, d, body.Params, svcDomain, service, body.Action, dur, false, &msg)
+			response.Fail(w, http.StatusBadGateway, apperr.CodeHA, "控制失败: "+msg)
+			return
+		}
+		s.audit(r.Context(), p, d, body.Params, svcDomain, service, body.Action, dur, true, nil)
+		view := s.deviceView(*d, hass.State{}, false, true, nil)
+		if idemKey != "" {
+			_ = s.sessions.FinishIdempotency(r.Context(), p.SID, idemKey, auth.IdempotencyRecord{
+				Status: http.StatusOK,
+				Body:   mustJSON(0, "ok", view),
+			})
+		}
+		response.OK(w, view)
+		return
+	}
+
+	// execute with audit timing
+	start := time.Now()
+	callErr := s.hass.CallService(r.Context(), svcDomain, service, data)
+	dur := int(time.Since(start).Milliseconds())
+
+	if callErr != nil {
+		s.log.Error("call service", "err", callErr, "entity", d.EntityID, "service", service)
 		if idemKey != "" {
 			s.sessions.ReleaseIdempotency(r.Context(), p.SID, idemKey)
 		}
-		response.Fail(w, http.StatusBadGateway, apperr.CodeHA, "控制失败: "+err.Error())
+		msg := callErr.Error()
+		s.audit(r.Context(), p, d, body.Params, svcDomain, service, body.Action, dur, false, &msg)
+		response.Fail(w, http.StatusBadGateway, apperr.CodeHA, "控制失败: "+msg)
 		return
 	}
+	s.audit(r.Context(), p, d, body.Params, svcDomain, service, body.Action, dur, true, nil)
 
 	st, err := s.hass.GetState(r.Context(), d.EntityID)
 	if err != nil || st == nil {
@@ -519,7 +686,7 @@ func (s *Server) handleDeviceAction(w http.ResponseWriter, r *http.Request) {
 		response.OK(w, map[string]any{"ok": true, "entity_id": d.EntityID})
 		return
 	}
-	view := s.deviceView(*d, *st, true, true)
+	view := s.deviceView(*d, *st, true, true, nil)
 	if idemKey != "" {
 		_ = s.sessions.FinishIdempotency(r.Context(), p.SID, idemKey, auth.IdempotencyRecord{
 			Status: http.StatusOK,
@@ -529,7 +696,7 @@ func (s *Server) handleDeviceAction(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, view)
 }
 
-func (s *Server) deviceView(d device.Device, st hass.State, hasState, fullAttrs bool) map[string]any {
+func (s *Server) deviceView(d device.Device, st hass.State, hasState, fullAttrs bool, roomNames map[uuid.UUID]string) map[string]any {
 	name := d.EntityID
 	if d.Name != nil && *d.Name != "" {
 		name = *d.Name
@@ -551,13 +718,19 @@ func (s *Server) deviceView(d device.Device, st hass.State, hasState, fullAttrs 
 		caps, level = hass.InferCapabilities(domain, nil)
 	}
 	primary := hass.PrimaryDisplay(domain, state, attrs)
+	var roomName any
+	if d.RoomID != nil && roomNames != nil {
+		if n, ok := roomNames[*d.RoomID]; ok {
+			roomName = n
+		}
+	}
 	view := map[string]any{
 		"id":              d.ID,
 		"entity_id":       d.EntityID,
 		"domain":          domain,
 		"name":            name,
 		"room_id":         d.RoomID,
-		"room_name":       nil,
+		"room_name":       roomName,
 		"favorite":        d.Favorite,
 		"hidden":          d.Hidden,
 		"state":           state,
@@ -566,12 +739,48 @@ func (s *Server) deviceView(d device.Device, st hass.State, hasState, fullAttrs 
 		"capabilities":    caps,
 		"control_level":   level,
 	}
+	// composite device: expose member entity_ids + live member states
+	if _, kind := deviceMetaKind(d.Meta); kind == "composite" {
+		memberIDs, _ := s.devices.EntityIDsByDevice(context.Background(), d.ID)
+		view["entity_ids"] = memberIDs
+		view["meta"] = map[string]any{"kind": "composite"}
+		members := s.compositeMembersView(memberIDs)
+		view["members"] = members
+		// aggregate: any member on → on
+		aggState := "off"
+		aggAvail := false
+		for _, m := range members {
+			if a, ok := m["available"].(bool); ok && a {
+				aggAvail = true
+			}
+			if ms, ok := m["state"].(string); ok && ms == "on" {
+				aggState = "on"
+			}
+		}
+		view["state"] = aggState
+		view["available"] = aggAvail
+		if aggAvail {
+			if aggState == "on" {
+				view["primary_display"] = "运行中"
+			} else {
+				view["primary_display"] = "已关闭"
+			}
+		}
+		view["control_level"] = "full"
+		if !capsContains(caps, "on_off") {
+			view["capabilities"] = append(caps, "on_off")
+		}
+	}
 	if fullAttrs && attrs != nil {
 		view["attributes"] = attrs
 	} else if attrs != nil {
-		// summary
+		// summary: keep card-level fields small but include control-relevant ones
 		sum := map[string]any{}
-		for _, k := range []string{"brightness", "color_temp_kelvin", "hs_color", "friendly_name", "unit_of_measurement", "device_class"} {
+		for _, k := range []string{
+			"brightness", "color_temp", "color_temp_kelvin", "hs_color",
+			"friendly_name", "unit_of_measurement", "device_class",
+			"position", "current_temperature", "temperature", "hvac_modes", "hvac_mode",
+		} {
 			if v, ok := attrs[k]; ok {
 				sum[k] = v
 			}
@@ -585,6 +794,93 @@ func (s *Server) deviceView(d device.Device, st hass.State, hasState, fullAttrs 
 		}
 	}
 	return view
+}
+
+// compositeMembersView looks up live states for each member entity_id.
+func (s *Server) compositeMembersView(memberIDs []string) []map[string]any {
+	out := make([]map[string]any, 0, len(memberIDs))
+	if s.hass == nil || !s.hass.Configured() || len(memberIDs) == 0 {
+		for _, eid := range memberIDs {
+			out = append(out, map[string]any{"entity_id": eid, "state": "", "available": false})
+		}
+		return out
+	}
+	states, err := s.hass.GetStates(context.Background())
+	if err != nil {
+		for _, eid := range memberIDs {
+			out = append(out, map[string]any{"entity_id": eid, "state": "", "available": false})
+		}
+		return out
+	}
+	byID := map[string]hass.State{}
+	for _, st := range states {
+		byID[st.EntityID] = st
+	}
+	for _, eid := range memberIDs {
+		st, ok := byID[eid]
+		if !ok {
+			out = append(out, map[string]any{"entity_id": eid, "state": "", "available": false})
+			continue
+		}
+		out = append(out, map[string]any{
+			"entity_id": eid,
+			"state":     st.State,
+			"available": hass.Available(st),
+		})
+	}
+	return out
+}
+
+// deviceMetaKind extracts meta.kind from the JSONB meta blob.
+func deviceMetaKind(meta json.RawMessage) (m device.DeviceMeta, kind string) {
+	if len(meta) == 0 {
+		return device.DeviceMeta{}, ""
+	}
+	_ = json.Unmarshal(meta, &m)
+	return m, m.Kind
+}
+
+func capsContains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// audit writes a device_action_logs row; failures are non-fatal.
+// params is the request params (already without entity_id), recorded as-is.
+func (s *Server) audit(ctx context.Context, p *middleware.Principal, d *device.Device, params map[string]any, haDomain, haService, action string, durMS int, success bool, errMsg *string) {
+	if s.alog == nil {
+		return
+	}
+	homeID := uuid.Nil
+	if h, err := s.homes.EnsureDefault(ctx, p.UserID); err == nil && h != nil {
+		homeID = h.ID
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	raw, _ := json.Marshal(params)
+	l := actionlog.Log{
+		UserID:   p.UserID,
+		HomeID:   homeID,
+		DeviceID: &d.ID,
+		EntityID: d.EntityID,
+		Action:   action,
+		Params:   raw,
+		Success:  success,
+		HADomain: haDomain,
+		HAService: haService,
+		DurationMS: durMS,
+	}
+	if errMsg != nil {
+		l.ErrorMessage = errMsg
+	}
+	if err := s.alog.Insert(ctx, l); err != nil {
+		s.log.Warn("audit insert", "err", err)
+	}
 }
 
 func isUniqueViolation(err error) bool {

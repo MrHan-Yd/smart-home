@@ -25,7 +25,14 @@ onMounted(async () => {
   <div class="view-login">
     <div class="login-panel" style="text-align: center">
       <div class="login-logo" style="justify-content: center">
-        <span class="logo-mark">SH</span>
+        <span class="logo-mark logo-svg" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 11.5 12 4l8 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M6 10.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="14.2" r="1.5" fill="currentColor"/>
+            <path d="M12 15.7V18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
       </div>
       <p class="login-lead">{{ status }}</p>
     </div>

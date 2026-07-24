@@ -423,7 +423,18 @@ function resolveCapabilities(state):
 
 ---
 
-### 5.11 `sensor` / `binary_sensor` — 只读
+### 5.11 电耗 / 功率（sensor 子集）
+
+HA **可以**提供电耗，但依赖集成是否暴露实体：
+
+| device_class | 含义 | 常见单位 |
+|--------------|------|----------|
+| `power` | 瞬时功率 | W / kW |
+| `energy` | 累计电量 | kWh |
+
+本系统经 `GET /api/states` 读取；**不**直连电表。分期与任务见 **[电耗与功率.md](./电耗与功率.md)**。
+
+### 5.12 `sensor` / `binary_sensor` — 只读
 
 | Domain | State | 控制 |
 |--------|-------|------|
@@ -440,7 +451,7 @@ function resolveCapabilities(state):
 
 ---
 
-### 5.12 其它 domain（默认策略）
+### 5.13 其它 domain（默认策略）
 
 | Domain | 策略 |
 |--------|------|

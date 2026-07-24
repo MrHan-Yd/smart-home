@@ -1,5 +1,5 @@
 import { ref, readonly } from 'vue'
-import { fetchMe, logout as apiLogout } from '@/api'
+import { fetchMe } from '@/api'
 import type { User } from '@/types/api'
 import { ApiError } from '@/lib/http'
 
@@ -26,31 +26,11 @@ export function useAuth() {
     }
   }
 
+  // 未登录：直接跳转统一认证中心（authorize），由 IdP 处理登录后回跳。
+  // 本系统不维护本地登录页，也不提供登出（清 SSO 会话由认证中心负责）。
   function goLogin(returnTo?: string) {
     const path = returnTo ?? window.location.pathname + window.location.search
     window.location.href = `/oauth/login?return_to=${encodeURIComponent(path || '/')}`
-  }
-
-  async function logoutLocal() {
-    user.value = null
-    try {
-      await apiLogout({ global: false })
-    } catch {
-      /* ignore */
-    }
-    window.location.replace('/login')
-  }
-
-  async function logoutGlobal() {
-    user.value = null
-    let logoutUrl = import.meta.env.VITE_AUTH_PORTAL_URL || 'http://127.0.0.1:5173'
-    try {
-      const res = await apiLogout({ global: true })
-      if (res.data.logout_url) logoutUrl = res.data.logout_url
-    } catch {
-      /* ignore */
-    }
-    window.location.replace(logoutUrl)
   }
 
   return {
@@ -59,8 +39,5 @@ export function useAuth() {
     checked: readonly(checked),
     loadMe,
     goLogin,
-    logoutLocal,
-    logoutGlobal,
-    logout: logoutLocal,
   }
 }

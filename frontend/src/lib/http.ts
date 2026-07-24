@@ -73,6 +73,13 @@ export function apiPatch<T>(path: string, body: unknown) {
   })
 }
 
+export function apiPut<T>(path: string, body: unknown) {
+  return apiFetch<T>(path, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
 export function apiDelete<T>(path: string) {
   return apiFetch<T>(path, { method: 'DELETE' })
 }

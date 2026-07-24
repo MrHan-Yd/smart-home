@@ -5,11 +5,13 @@ import { fetchDevices } from '@/api'
 import type { DeviceView } from '@/types/api'
 import DeviceCard from '@/components/DeviceCard.vue'
 import { useToast } from '@/composables/useToast'
+import { useWS } from '@/composables/useWS'
 import { canToggle, isOn } from '@/lib/device'
 import { ApiError } from '@/lib/http'
 
 const router = useRouter()
 const { toast } = useToast()
+const { connected, subscribe } = useWS()
 const loading = ref(true)
 const devices = ref<DeviceView[]>([])
 let timer: number | undefined
@@ -54,12 +56,18 @@ function onUpdated(d: DeviceView) {
   else devices.value = [...devices.value, d]
 }
 
+let unsub: (() => void) | undefined
 onMounted(() => {
   load()
-  timer = window.setInterval(load, 15000)
+  unsub = subscribe((d) => {
+    const i = devices.value.findIndex((x) => x.id === d.id)
+    if (i >= 0) devices.value[i] = d
+  })
+  timer = window.setInterval(load, connected.value ? 60000 : 15000)
 })
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
+  unsub?.()
 })
 </script>
 

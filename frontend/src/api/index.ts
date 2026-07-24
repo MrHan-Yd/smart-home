@@ -1,17 +1,8 @@
-import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from '@/lib/http'
-import type { DeviceView, DiscoverEntity, HAStatus, User } from '@/types/api'
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut } from '@/lib/http'
+import type { DeviceView, DiscoverEntity, HAInstance, HAStatus, Room, Scenario, User } from '@/types/api'
 
 export function fetchMe() {
   return apiGet<User>('/api/v1/me', { skipAuthRedirect: true })
-}
-
-export function logout(opts?: { global?: boolean }) {
-  const q = opts?.global ? '?global=1' : ''
-  return apiFetch<{ ok: boolean; logout_url?: string }>(
-    `/oauth/logout${q}`,
-    { method: 'POST' },
-    { skipAuthRedirect: true },
-  )
 }
 
 export function fetchMeta() {
@@ -53,6 +44,15 @@ export function createDevice(body: { entity_id: string; name?: string }) {
   return apiPost<DeviceView>('/api/v1/devices', body)
 }
 
+export function createCompositeDevice(body: {
+  entity_ids: string[]
+  primary_entity_id?: string
+  name?: string
+  room_id?: string
+}) {
+  return apiPost<DeviceView>('/api/v1/devices/composite', body)
+}
+
 export function batchCreateDevices(entity_ids: string[]) {
   return apiPost<{
     created: { id: string; entity_id: string; domain: string }[]
@@ -64,6 +64,7 @@ export function patchDevice(
   id: string,
   body: {
     name?: string
+    room_id?: string | null
     favorite?: boolean
     hidden?: boolean
     sort_order?: number
@@ -114,4 +115,158 @@ export function discoverEntities(params?: {
     page_size: number
     total: number
   }>(`/api/v1/discover/entities${q ? `?${q}` : ''}`)
+}
+
+export function fetchRooms() {
+  return apiGet<{ items: Room[] }>('/api/v1/rooms')
+}
+
+export function createRoom(body: { name: string; sort_order?: number }) {
+  return apiPost<{ id: string; name: string; sort_order: number }>('/api/v1/rooms', body)
+}
+
+export function patchRoom(id: string, body: { name?: string; sort_order?: number }) {
+  return apiPatch<{ id: string; name: string; sort_order: number }>(`/api/v1/rooms/${id}`, body)
+}
+
+export function deleteRoom(id: string) {
+  return apiDelete<{ ok: boolean }>(`/api/v1/rooms/${id}`)
+}
+
+export type HistoryPoint = { t: string; state: string; num: number | null }
+export type HistoryResp = {
+  entity_id: string
+  points: HistoryPoint[]
+  count: number
+}
+
+export function fetchDeviceHistory(id: string, range: '24h' | '7d') {
+  const now = new Date()
+  const end = now.toISOString()
+  const start = new Date(now.getTime() - (range === '7d' ? 7 : 1) * 86400000).toISOString()
+  const qs = new URLSearchParams({ start, end, significant_only: 'true' })
+  return apiGet<HistoryResp>(`/api/v1/devices/${id}/history?${qs.toString()}`)
+}
+
+export type ActionLogItem = {
+  id: string
+  device_id: string
+  entity_id: string
+  action: string
+  success: boolean
+  error_message: string
+  ha_domain: string
+  ha_service: string
+  duration_ms: number
+  created_at: string
+}
+
+export function fetchActionLogs(limit = 50, offset = 0) {
+  const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiGet<{ items: ActionLogItem[] }>(`/api/v1/action-logs?${qs.toString()}`)
+}
+
+export function fetchHAInstances() {
+  return apiGet<{ items: HAInstance[] }>('/api/v1/ha/instances')
+}
+
+export function createHAInstance(body: { name?: string; base_url: string; token: string }) {
+  return apiPost<{ id: string; name: string; base_url_host: string }>('/api/v1/ha/instances', body)
+}
+
+export function updateHAInstance(id: string, body: { base_url?: string; token?: string }) {
+  return apiPatch<{ id: string }>(`/api/v1/ha/instances/${id}`, body)
+}
+
+export function deleteHAInstance(id: string) {
+  return apiDelete<{ ok: boolean }>(`/api/v1/ha/instances/${id}`)
+}
+
+export function probeHAInstance(id: string) {
+  return apiPost<{ ok: boolean }>(`/api/v1/ha/instances/${id}/probe`, undefined)
+}
+
+export function activateHAInstance(id: string) {
+  return apiPost<{ ok: boolean }>(`/api/v1/ha/instances/${id}/activate`, undefined)
+}
+
+export type AnalyticsSummary = {
+  activation_count: number
+  runtime_hours: number
+  energy_kwh: number | null
+  avg_temperature: number | null
+  avg_humidity: number | null
+  on_count: number
+  online_count: number
+}
+export type AnalyticsRuntime = {
+  date: string
+  device_id: string
+  hours: number
+  on_count: number
+  energy_kwh: number | null
+}
+export type AnalyticsRanking = { device_id: string; name: string; hours: number; on_count: number }
+export type AnalyticsTypeMix = { domain: string; count: number; hours: number }
+export type AnalyticsHeatmap = { entity_id: string; hour: number; count: number }
+export type AnalyticsEnv = { device_id: string; entity_id: string; series: { date: string; value: number | null }[] }
+
+function rng(r: string) {
+  const qs = new URLSearchParams({ range: r })
+  return qs.toString()
+}
+export function fetchAnalyticsSummary(range = '7d') {
+  return apiGet<AnalyticsSummary>(`/api/v1/analytics/summary?${rng(range)}`)
+}
+export function fetchAnalyticsRuntime(range = '7d') {
+  return apiGet<{ items: AnalyticsRuntime[] }>(`/api/v1/analytics/runtime?${rng(range)}`)
+}
+export function fetchAnalyticsRanking(range = '7d', limit = 10) {
+  return apiGet<{ items: AnalyticsRanking[] }>(`/api/v1/analytics/ranking?${rng(range)}&limit=${limit}`)
+}
+export function fetchAnalyticsTypeMix(range = '7d') {
+  return apiGet<{ items: AnalyticsTypeMix[] }>(`/api/v1/analytics/type-mix?${rng(range)}`)
+}
+export function fetchAnalyticsHeatmap(range = '7d') {
+  return apiGet<{ items: AnalyticsHeatmap[] }>(`/api/v1/analytics/heatmap?${rng(range)}`)
+}
+export function fetchAnalyticsEnvironment(range = '7d') {
+  return apiGet<{ items: AnalyticsEnv[] }>(`/api/v1/analytics/environment?${rng(range)}`)
+}
+
+// ---- scenarios ----
+
+export function fetchScenarios() {
+  return apiGet<{ items: Scenario[] }>('/api/v1/scenarios')
+}
+
+export function fetchScenario(id: string) {
+  return apiGet<Scenario>(`/api/v1/scenarios/${id}`)
+}
+
+export function createScenario(body: {
+  name: string
+  icon?: string
+  room_id?: string | null
+  steps?: Array<{ device_id: string; action: string; params?: Record<string, unknown>; delay_ms?: number }>
+}) {
+  return apiPost<Scenario>('/api/v1/scenarios', body)
+}
+
+export function patchScenario(id: string, body: { name?: string; icon?: string; room_id?: string | null; sort_order?: number; enabled?: boolean }) {
+  return apiPatch<Scenario>(`/api/v1/scenarios/${id}`, body)
+}
+
+export function replaceScenarioSteps(id: string, steps: Array<{ device_id: string; action: string; params?: Record<string, unknown>; delay_ms?: number }>) {
+  return apiPut<{ ok: boolean }>(`/api/v1/scenarios/${id}/steps`, { steps })
+}
+
+export function deleteScenario(id: string) {
+  return apiDelete<{ ok: boolean }>(`/api/v1/scenarios/${id}`)
+}
+
+export type ScenarioRunResult = { device_id: string; action: string; success: boolean; error?: string }
+
+export function runScenario(id: string) {
+  return apiPost<{ results: ScenarioRunResult[] }>(`/api/v1/scenarios/${id}/run`, undefined)
 }

@@ -50,6 +50,7 @@ func main() {
 	ha := hass.NewClient(cfg.HassBaseURL, cfg.HassToken, cfg.HassTimeout)
 
 	srv := httpserver.New(cfg, log, db, rdb, ha)
+	srv.StartHub(ctx)
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr(),
 		Handler:           srv.Handler(),

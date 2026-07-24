@@ -28,6 +28,21 @@ type Device struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
+// DeviceMeta is the (optional) JSONB payload stored on devices.meta.
+// `kind == "composite"` marks a multi-entity composite device.
+type DeviceMeta struct {
+	Kind  string   `json:"kind,omitempty"`  // composite
+	EntityIDs []string `json:"entity_ids,omitempty"`
+}
+
+// Member binds an entity to a (composite) device row in device_members.
+type Member struct {
+	DeviceID  uuid.UUID
+	EntityID  string
+	Role      string // primary | member
+	SortOrder int
+}
+
 type ListFilter struct {
 	HomeID        uuid.UUID
 	UserID        uuid.UUID
@@ -139,6 +154,42 @@ FROM devices WHERE id = $1 AND user_id = $2`
 	return &d, nil
 }
 
+// GetByEntity returns the user's device matching an entity_id, if owned.
+func (r *Repo) GetByEntity(ctx context.Context, userID uuid.UUID, entityID string) (*Device, error) {
+	const q = `
+SELECT id, home_id, user_id, entity_id, domain, name, room_id, favorite, hidden,
+       sort_order, icon, meta, created_at, updated_at
+FROM devices WHERE entity_id = $1 AND user_id = $2`
+	row := r.db.QueryRow(ctx, q, entityID, userID)
+	d, err := scanDevice(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// EntityIDsByUser returns all entity_ids owned by a user (for hub tracking).
+func (r *Repo) EntityIDsByUser(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	const q = `SELECT entity_id FROM devices WHERE user_id = $1`
+	rows, err := r.db.Query(ctx, q, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var eid string
+		if err := rows.Scan(&eid); err != nil {
+			return nil, err
+		}
+		out = append(out, eid)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repo) Create(ctx context.Context, d Device) (*Device, error) {
 	if d.ID == uuid.Nil {
 		d.ID = uuid.New()
@@ -240,4 +291,128 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b[i:])
+}
+
+// --- composite device members ---
+
+// SetMembers replaces all members of a device in one transaction.
+// The first member (or the one whose EntityID matches primaryEntityID) gets
+// role "primary"; the rest "member".
+func (r *Repo) SetMembers(ctx context.Context, deviceID uuid.UUID, primaryEntityID string, entityIDs []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM device_members WHERE device_id = $1`, deviceID); err != nil {
+		return err
+	}
+	// insert primary first so sort_order 0 aligns with primary
+	ordered := make([]string, 0, len(entityIDs))
+	if primaryEntityID == "" && len(entityIDs) > 0 {
+		primaryEntityID = entityIDs[0]
+	}
+	for _, eid := range entityIDs {
+		if eid == primaryEntityID {
+			continue
+		}
+		ordered = append(ordered, eid)
+	}
+	all := append([]string{primaryEntityID}, ordered...)
+	if len(all) == 1 && all[0] == "" {
+		all = all[:0]
+	}
+	for i, eid := range all {
+		role := "member"
+		if i == 0 {
+			role = "primary"
+		}
+		if _, err := tx.Exec(ctx, `
+INSERT INTO device_members (device_id, entity_id, role, sort_order)
+VALUES ($1, $2, $3, $4)`, deviceID, eid, role, i); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// MembersOf returns members of a device, ordered primary first then sort_order.
+func (r *Repo) MembersOf(ctx context.Context, deviceID uuid.UUID) ([]Member, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT device_id, entity_id, role, sort_order FROM device_members
+WHERE device_id = $1 ORDER BY (role <> 'primary'), sort_order ASC`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Member, 0)
+	for rows.Next() {
+		var m Member
+		if err := rows.Scan(&m.DeviceID, &m.EntityID, &m.Role, &m.SortOrder); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// EntityIDsByDevice returns the member entity_ids for a device (primary first).
+func (r *Repo) EntityIDsByDevice(ctx context.Context, deviceID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT entity_id FROM device_members WHERE device_id = $1
+ORDER BY (role <> 'primary'), sort_order ASC`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var eid string
+		if err := rows.Scan(&eid); err != nil {
+			return nil, err
+		}
+		out = append(out, eid)
+	}
+	return out, rows.Err()
+}
+
+// EntityIDsByUserWithMembers returns every entity tracked for a user: primary
+// entity_id of each device plus any composite member entity_ids. Used for hub
+// tracking so member state changes are also delivered.
+func (r *Repo) EntityIDsByUserWithMembers(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT d.entity_id FROM devices d WHERE d.user_id = $1
+UNION
+SELECT m.entity_id FROM device_members m JOIN devices d ON d.id = m.device_id WHERE d.user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var eid string
+		if err := rows.Scan(&eid); err != nil {
+			return nil, err
+		}
+		out = append(out, eid)
+	}
+	return out, rows.Err()
+}
+
+// DeviceIDByMemberEntity returns the composite device that owns a member
+// entity_id (for the given user), or uuid.Nil if the entity is a standalone
+// device or not owned. Useful to refresh a composite view when a member changes.
+func (r *Repo) DeviceIDByMemberEntity(ctx context.Context, userID uuid.UUID, entityID string) (uuid.UUID, error) {
+	row := r.db.QueryRow(ctx, `
+SELECT d.id FROM device_members m
+JOIN devices d ON d.id = m.device_id
+WHERE d.user_id = $1 AND m.entity_id = $2 AND d.meta->>'kind' = 'composite'
+LIMIT 1`, userID, entityID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, nil
+	}
+	return id, err
 }

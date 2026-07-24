@@ -13,6 +13,7 @@ Go BFF · 统一认证 + Home Assistant。设计见 `../docs/backend/`。
 | 发现 | `GET /api/v1/discover/entities` |
 | 设备 | CRUD + batch · `POST /api/v1/devices/{id}/actions` |
 | Session | Cookie `sh_sid` + Redis；PKCE；refresh 单飞 |
+| 迁移 | `001_init` · **`002_telemetry_energy`**（时序/日汇总表，分析用） |
 
 ## 启动
 
@@ -21,6 +22,7 @@ cd backend
 # 编辑 .env（OAuth client_id/secret、DATABASE_URL、REDIS_URL）
 # 建库：CREATE DATABASE smart_home;
 # psql ... -f migrations/001_init.sql
+# psql ... -f migrations/002_telemetry_energy.sql   # 时序/用电分析入库
 # IdP redirect 须为：http://127.0.0.1:3002/oauth/callback
 
 .\run.ps1

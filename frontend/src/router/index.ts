@@ -5,15 +5,15 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
-      path: '/login',
-      name: 'login',
-      component: () => import('@/views/LoginView.vue'),
-      meta: { public: true },
-    },
-    {
       path: '/oauth/complete',
       name: 'oauth-complete',
       component: () => import('@/views/OAuthCompleteView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/wall',
+      name: 'wall',
+      component: () => import('@/views/WallView.vue'),
       meta: { public: true },
     },
     {
@@ -36,9 +36,29 @@ const router = createRouter({
           component: () => import('@/views/DeviceDetailView.vue'),
         },
         {
+          path: 'rooms',
+          name: 'rooms',
+          component: () => import('@/views/RoomsView.vue'),
+        },
+        {
           path: 'add',
           name: 'add',
           component: () => import('@/views/AddDeviceView.vue'),
+        },
+        {
+          path: 'logs',
+          name: 'logs',
+          component: () => import('@/views/ActionLogView.vue'),
+        },
+        {
+          path: 'scenarios',
+          name: 'scenarios',
+          component: () => import('@/views/ScenariosView.vue'),
+        },
+        {
+          path: 'analytics',
+          name: 'analytics',
+          component: () => import('@/views/AnalyticsView.vue'),
         },
         {
           path: 'settings',

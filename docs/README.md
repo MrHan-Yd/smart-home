@@ -9,6 +9,7 @@
 | [backend/功能设计.md](./backend/功能设计.md) | **功能范围与优先级** |
 | [backend/设备类型与接入设计.md](./backend/设备类型与接入设计.md) | **多类型设备添加与扩展** |
 | [backend/HA对接设计.md](./backend/HA对接设计.md) | **HA 分类型对接** |
+| [backend/电耗与功率.md](./backend/电耗与功率.md) | **电耗/功率（HA sensor + 任务）** |
 | [backend/数据库设计.md](./backend/数据库设计.md) | **库表设计** |
 | [backend/接口设计.md](./backend/接口设计.md) | **接口设计** |
 | [backend/技术选型.md](./backend/技术选型.md) | **后端 Go** |

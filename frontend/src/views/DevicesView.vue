@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchDevices } from '@/api'
-import type { DeviceView } from '@/types/api'
+import { fetchDevices, fetchRooms } from '@/api'
+import type { DeviceView, Room } from '@/types/api'
 import DeviceCard from '@/components/DeviceCard.vue'
 import { useToast } from '@/composables/useToast'
+import { useWS } from '@/composables/useWS'
 import { ApiError } from '@/lib/http'
 
 const router = useRouter()
 const { toast } = useToast()
+const { subscribe } = useWS()
 const loading = ref(true)
 const devices = ref<DeviceView[]>([])
+const rooms = ref<Room[]>([])
 const q = ref('')
 const domain = ref('')
+const roomId = ref('')
 const flag = ref<'all' | 'controllable' | 'favorite'>('all')
 
 const domains = computed(() => {
@@ -23,6 +27,7 @@ const domains = computed(() => {
 const filtered = computed(() => {
   let list = devices.value
   if (domain.value) list = list.filter((d) => d.domain === domain.value)
+  if (roomId.value) list = list.filter((d) => (d.room_id || '') === roomId.value)
   if (flag.value === 'favorite') list = list.filter((d) => d.favorite)
   if (flag.value === 'controllable') list = list.filter((d) => d.control_level !== 'read_only')
   const s = q.value.trim().toLowerCase()
@@ -40,8 +45,9 @@ const filtered = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const res = await fetchDevices()
+    const [res, rr] = await Promise.all([fetchDevices(), fetchRooms()])
     devices.value = res.data.items || []
+    rooms.value = rr.data.items || []
   } catch (e) {
     toast(e instanceof ApiError ? e.message : '加载失败', 'err')
   } finally {
@@ -54,7 +60,17 @@ function onUpdated(d: DeviceView) {
   if (i >= 0) devices.value[i] = d
 }
 
-onMounted(load)
+let unsub: (() => void) | undefined
+onMounted(() => {
+  load()
+  unsub = subscribe((d) => {
+    const i = devices.value.findIndex((x) => x.id === d.id)
+    if (i >= 0) devices.value[i] = d
+  })
+})
+onUnmounted(() => {
+  unsub?.()
+})
 </script>
 
 <template>
@@ -93,6 +109,22 @@ onMounted(load)
         @click="domain = d"
       >
         {{ d }}
+      </button>
+    </div>
+
+    <div class="chip-row" style="margin-bottom: 1rem">
+      <button type="button" class="chip" :class="{ active: !roomId }" @click="roomId = ''">
+        全部房间
+      </button>
+      <button
+        v-for="r in rooms"
+        :key="r.id"
+        type="button"
+        class="chip"
+        :class="{ active: roomId === r.id }"
+        @click="roomId = r.id"
+      >
+        {{ r.name }}
       </button>
     </div>
 

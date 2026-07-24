@@ -42,6 +42,17 @@ LIMIT 1`
 	return &h, nil
 }
 
+// Owner returns the user_id owning a home by home id.
+func (r *Repo) Owner(ctx context.Context, homeID uuid.UUID) (uuid.UUID, error) {
+	const q = `SELECT user_id FROM homes WHERE id = $1`
+	var uid uuid.UUID
+	err := r.db.QueryRow(ctx, q, homeID).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, nil
+	}
+	return uid, err
+}
+
 func (r *Repo) EnsureDefault(ctx context.Context, userID uuid.UUID) (*Home, error) {
 	h, err := r.GetDefault(ctx, userID)
 	if err != nil {

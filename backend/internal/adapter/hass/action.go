@@ -49,6 +49,29 @@ func ResolveAction(domain, action string, params map[string]any, entityID string
 			return "", "", nil, fmt.Errorf("set_effect only for light")
 		}
 		return "light", "turn_on", data, nil
+	case "set_volume":
+		if domain != "media_player" {
+			return "", "", nil, fmt.Errorf("set_volume only for media_player")
+		}
+		return "media_player", "volume_set", data, nil
+	case "play_pause":
+		if domain != "media_player" {
+			return "", "", nil, fmt.Errorf("play_pause only for media_player")
+		}
+		return "media_player", "media_play_pause", data, nil
+	case "play":
+		if domain != "media_player" {
+			return "", "", nil, fmt.Errorf("play only for media_player")
+		}
+		return "media_player", "media_play", data, nil
+	case "pause":
+		if domain == "media_player" {
+			return "media_player", "media_pause", data, nil
+		}
+		if domain != "vacuum" {
+			return "", "", nil, fmt.Errorf("pause only for media_player or vacuum")
+		}
+		return "vacuum", "pause", data, nil
 	case "open":
 		if domain != "cover" {
 			return "", "", nil, fmt.Errorf("open only for cover")
@@ -60,10 +83,14 @@ func ResolveAction(domain, action string, params map[string]any, entityID string
 		}
 		return "cover", "close_cover", data, nil
 	case "stop":
-		if domain != "cover" {
-			return "", "", nil, fmt.Errorf("stop only for cover")
+		switch domain {
+		case "cover":
+			return "cover", "stop_cover", data, nil
+		case "vacuum":
+			return "vacuum", "stop", data, nil
+		default:
+			return "", "", nil, fmt.Errorf("stop only for cover or vacuum")
 		}
-		return "cover", "stop_cover", data, nil
 	case "set_position":
 		if domain != "cover" {
 			return "", "", nil, fmt.Errorf("set_position only for cover")
@@ -132,6 +159,8 @@ func ActionAllowed(domain, action, controlLevel string) bool {
 			return true
 		}
 		return false
+	case "set_volume", "play_pause", "play", "pause":
+		return domain == "media_player" || (action == "pause" && domain == "vacuum")
 	default:
 		return controlLevel == "full" || controlLevel == "action"
 	}

@@ -12,7 +12,6 @@ import (
 	"github.com/demo/smart-home/backend/internal/pkg/apperr"
 	"github.com/demo/smart-home/backend/internal/pkg/response"
 )
-
 func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("oauth login")
 	returnTo := r.URL.Query().Get("return_to")
@@ -193,34 +192,6 @@ func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loc, http.StatusFound)
 }
 
-func (s *Server) handleOAuthLogout(w http.ResponseWriter, r *http.Request) {
-	s.log.Info("oauth logout")
-	c, err := r.Cookie(s.cfg.SessionCookieName)
-	if err == nil && c.Value != "" {
-		if sess, _ := s.sessions.GetSession(r.Context(), c.Value); sess != nil {
-			if err := s.oauth.Revoke(r.Context(), sess.AccessToken); err != nil {
-				s.log.Warn("revoke access", "err", err)
-			}
-			if sess.RefreshToken != "" {
-				if err := s.oauth.Revoke(r.Context(), sess.RefreshToken); err != nil {
-					s.log.Warn("revoke refresh", "err", err)
-				}
-			}
-		}
-		if err := s.sessions.DeleteSession(r.Context(), c.Value); err != nil {
-			s.log.Warn("delete session", "err", err)
-		}
-	}
-	middleware.ClearSessionCookie(w, s.cfg)
-	w.Header().Set("Cache-Control", "no-store")
-	global := r.URL.Query().Get("global") == "1" || r.URL.Query().Get("global") == "true"
-	data := map[string]any{"ok": true}
-	if global {
-		data["logout_url"] = s.cfg.AuthPortalURL
-	}
-	response.OK(w, data)
-}
-
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	p := middleware.UserFromContext(r.Context())
 	if p == nil {
@@ -232,6 +203,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		response.Fail(w, http.StatusInternalServerError, apperr.CodeDB, "加载家庭失败")
 		return
 	}
+	s.ensureHALoaded(h.ID)
 	out := map[string]any{
 		"id":    p.UserID,
 		"sub":   p.Sub,

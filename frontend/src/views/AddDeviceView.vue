@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { batchCreateDevices, createDevice, discoverEntities } from '@/api'
+import { batchCreateDevices, createCompositeDevice, createDevice, discoverEntities } from '@/api'
 import type { DiscoverEntity } from '@/types/api'
 import { useToast } from '@/composables/useToast'
 import { domainEmoji } from '@/lib/device'
@@ -90,6 +90,21 @@ async function batchAdd() {
   }
 }
 
+async function compositeAdd() {
+  const ids = Array.from(selected.value)
+  if (ids.length < 2) return
+  adding.value = true
+  try {
+    await createCompositeDevice({ entity_ids: ids })
+    toast(`已组合添加 ${ids.length} 个实体`)
+    await load()
+  } catch (e) {
+    toast(e instanceof ApiError ? e.message : '组合添加失败', 'err')
+  } finally {
+    adding.value = false
+  }
+}
+
 let debounce: number | undefined
 watch([q, domain, onlyNew], () => {
   window.clearTimeout(debounce)
@@ -109,6 +124,15 @@ onMounted(load)
       <div class="page-actions">
         <button type="button" class="btn btn-outline btn-sm" :disabled="loading" @click="load">
           同步 HA
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          :disabled="selectedCount < 2 || adding"
+          title="将选中实体组合为单个设备（多 entity）"
+          @click="compositeAdd"
+        >
+          组合添加{{ selectedCount > 1 ? ` (${selectedCount})` : '' }}
         </button>
         <button
           type="button"

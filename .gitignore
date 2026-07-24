@@ -1,0 +1,75 @@
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDE / Editor ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Frontend (Node / Vue) ---
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+# Capacitor / Android（初始化后常见产物；源码 android/ 若需入库可再调整）
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/captures/
+frontend/android/local.properties
+frontend/android/*.iml
+frontend/android/.idea/
+frontend/ios/App/Pods/
+frontend/ios/DerivedData/
+
+# --- Backend (Go) ---
+backend/bin/
+backend/tmp/
+backend/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+
+# --- Build / cache ---
+.cache/
+tmp/
+temp/
+*.tsbuildinfo
+
+# --- Misc ---
+*.pem
+*.key
+.turbo/
+.pnpm-store/

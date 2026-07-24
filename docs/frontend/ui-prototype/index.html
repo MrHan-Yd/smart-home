@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>智能家居 · UI 原型</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sh-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <button type="button" class="theme-fab" id="btn-theme" title="切换主题" aria-label="切换主题">
+    <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+    <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+  </button>
+
+  <!-- 登录 -->
+  <div id="view-login" class="view-login">
+    <div class="login-panel">
+      <div class="login-logo">
+        <span class="logo-mark">SH</span>
+        <span class="logo-text">Home Hub</span>
+      </div>
+      <h1 class="login-title">你的设备，一张网管住</h1>
+      <p class="login-lead">对接 Home Assistant · 统一认证登录 · 监控、控制与使用分析。</p>
+      <ul class="login-features">
+        <li>
+          <span class="feat-icon">01</span>
+          <div>
+            <strong>统一认证 SSO</strong>
+            <span>本系统不存密码，票只来自认证中心</span>
+          </div>
+        </li>
+        <li>
+          <span class="feat-icon">02</span>
+          <div>
+            <strong>从 HA 添加设备</strong>
+            <span>多类型发现与纳入，能力驱动控制</span>
+          </div>
+        </li>
+        <li>
+          <span class="feat-icon">03</span>
+          <div>
+            <strong>监控 · 历史 · 分析</strong>
+            <span>状态墙、曲线、开时长与用电概览</span>
+          </div>
+        </li>
+      </ul>
+      <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-sso">
+        继续使用统一认证中心
+      </button>
+      <p class="login-footnote">设计稿 · 点击模拟登录，无真实请求</p>
+    </div>
+  </div>
+
+  <!-- 应用 -->
+  <div id="view-app" class="view-app hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <span class="logo-mark sm">SH</span>
+        <span class="topbar-title">Home Hub</span>
+        <span class="ha-pill" id="ha-pill" title="Home Assistant 连接状态">
+          <span class="dot"></span>
+          <span id="ha-pill-text">HA 已连接</span>
+        </span>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-wall" title="分析大屏">
+          <span class="btn-label">分析大屏</span>
+          <span class="btn-label-short" aria-hidden="true">大屏</span>
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline btn-sm btn-portal"
+          id="btn-portal"
+          title="切换系统"
+          aria-label="切换系统"
+        >
+          <span class="portal-icon" aria-hidden="true">⇄</span>
+          <span class="portal-label">切换系统</span>
+        </button>
+        <span class="user-chip hide-sm">
+          <span class="avatar">我</span>
+          <span id="user-name">演示用户</span>
+        </span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-logout" title="登出">
+          <span class="btn-label">登出</span>
+          <span class="btn-label-short" aria-hidden="true">⎋</span>
+        </button>
+        <button type="button" class="btn btn-icon btn-outline" id="btn-theme-app" title="主题">☾</button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="sidebar" id="sidebar">
+        <button type="button" class="nav-item active" data-page="overview"><span class="nav-ico">⌂</span>总览</button>
+        <button type="button" class="nav-item" data-page="devices"><span class="nav-ico">▦</span>设备</button>
+        <button type="button" class="nav-item" data-page="add"><span class="nav-ico">＋</span>添加设备</button>
+        <button type="button" class="nav-item" data-page="history"><span class="nav-ico">◷</span>历史</button>
+        <button type="button" class="nav-item" data-page="analytics"><span class="nav-ico">▣</span>分析</button>
+        <button type="button" class="nav-item" data-page="settings"><span class="nav-ico">⚙</span>设置</button>
+      </aside>
+
+      <main class="main">
+        <!-- 总览 -->
+        <section id="page-overview" class="page active">
+          <div class="page-header">
+            <div>
+              <h1>总览</h1>
+              <p>家庭状态墙 · 快捷控制常用设备</p>
+            </div>
+            <div class="page-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="btn-refresh">刷新</button>
+              <button type="button" class="btn btn-primary btn-sm" data-go="add">添加设备</button>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card">
+              <div class="label">我的设备</div>
+              <div class="value" id="stat-total">0</div>
+              <div class="hint">已从 HA 纳入</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">开启中</div>
+              <div class="value" id="stat-on">0</div>
+              <div class="hint">可开关类设备</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">异常 / 离线</div>
+              <div class="value" id="stat-bad">0</div>
+              <div class="hint">unavailable</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">环境</div>
+              <div class="value" id="stat-temp">—</div>
+              <div class="hint">客厅温度（示意）</div>
+            </div>
+          </div>
+          <div class="section-title">收藏</div>
+          <div class="device-grid" id="fav-grid"></div>
+          <div class="section-title">全部设备</div>
+          <div class="device-grid" id="overview-grid"></div>
+        </section>
+
+        <!-- 设备列表 -->
+        <section id="page-devices" class="page">
+          <div class="page-header">
+            <div>
+              <h1>设备</h1>
+              <p>筛选、收藏、进入详情控制</p>
+            </div>
+            <div class="page-actions">
+              <button type="button" class="btn btn-primary btn-sm" data-go="add">添加设备</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <input class="input" id="filter-q" type="search" placeholder="搜索名称 / entity…" />
+            <select class="select" id="filter-room">
+              <option value="">全部房间</option>
+              <option value="客厅">客厅</option>
+              <option value="卧室">卧室</option>
+              <option value="厨房">厨房</option>
+              <option value="未分配">未分配</option>
+            </select>
+          </div>
+          <div class="chip-row" id="filter-domain" style="margin-bottom: 1rem"></div>
+          <div class="chip-row" style="margin-bottom: 1rem">
+            <button type="button" class="chip active" data-flag="all">全部</button>
+            <button type="button" class="chip" data-flag="controllable">仅可控制</button>
+            <button type="button" class="chip" data-flag="favorite">仅收藏</button>
+          </div>
+          <div class="device-grid" id="devices-grid"></div>
+        </section>
+
+        <!-- 添加设备 -->
+        <section id="page-add" class="page">
+          <div class="page-header">
+            <div>
+              <h1>添加设备</h1>
+              <p>从 Home Assistant 发现实体 · 勾选纳入「我的设备」（非配网）</p>
+            </div>
+            <div class="page-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="btn-sync-ha">同步 HA</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-batch-add" disabled>批量添加</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <input class="input" id="discover-q" type="search" placeholder="筛选 entity / 名称…" />
+            <label class="chip" style="cursor: pointer">
+              <input type="checkbox" id="discover-only-new" checked style="margin-right: 0.35rem" />
+              仅未添加
+            </label>
+          </div>
+          <div class="chip-row" id="discover-domain" style="margin-bottom: 1rem"></div>
+          <div class="discover-list" id="discover-list"></div>
+        </section>
+
+        <!-- 详情 / 操作台 -->
+        <section id="page-detail" class="page">
+          <div id="detail-root" class="detail-root"></div>
+        </section>
+
+        <!-- 历史 -->
+        <section id="page-history" class="page">
+          <div class="page-header">
+            <div>
+              <h1>历史</h1>
+              <p>状态变化曲线 · 数据来自 HA history（示意）</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <select class="select" id="history-device"></select>
+            <select class="select" id="history-range">
+              <option value="24h">近 24 小时</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d">近 30 天</option>
+            </select>
+          </div>
+          <div class="panel">
+            <div class="chart-box" id="history-chart">
+              <div class="chart-line">
+                <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                  <polyline
+                    fill="none"
+                    stroke="hsl(199 89% 48%)"
+                    stroke-width="2.5"
+                    points="0,80 40,70 80,75 120,40 160,50 200,30 240,45 280,25 320,55 360,35 400,40"
+                  />
+                  <polyline
+                    fill="hsla(199,89%,48%,0.15)"
+                    stroke="none"
+                    points="0,120 0,80 40,70 80,75 120,40 160,50 200,30 240,45 280,25 320,55 360,35 400,40 400,120"
+                  />
+                </svg>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 0.8rem; color: hsl(var(--muted-foreground))">
+              原型示意 · 正式版用 ECharts 渲染 HA /api/history 数据
+            </p>
+          </div>
+        </section>
+
+        <!-- 分析 -->
+        <section id="page-analytics" class="page">
+          <div class="page-header">
+            <div>
+              <h1>使用分析</h1>
+              <p>开启次数 · 时长 · 环境趋势（P2）</p>
+            </div>
+            <div class="page-actions">
+              <select class="select" id="analytics-range">
+                <option>本周</option>
+                <option>本月</option>
+              </select>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="stat-card">
+              <div class="label">客厅灯 · 开启次数</div>
+              <div class="value">28</div>
+              <div class="hint">较上周 +12%</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">客厅灯 · 开启时长</div>
+              <div class="value">16.4h</div>
+              <div class="hint">日均约 2.3h</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">插座用电（粗算）</div>
+              <div class="value">4.2kWh</div>
+              <div class="hint">需功率传感器</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">平均室温</div>
+              <div class="value">24.1°</div>
+              <div class="hint">客厅传感器</div>
+            </div>
+          </div>
+          <div class="section-title">本周开启时长 TOP</div>
+          <div class="panel">
+            <div class="chart-box">
+              <div class="chart-line">
+                <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                  <rect x="20" y="50" width="40" height="60" rx="4" fill="hsl(199 89% 48% / 0.7)" />
+                  <rect x="90" y="30" width="40" height="80" rx="4" fill="hsl(199 89% 48% / 0.85)" />
+                  <rect x="160" y="70" width="40" height="40" rx="4" fill="hsl(199 89% 48% / 0.55)" />
+                  <rect x="230" y="40" width="40" height="70" rx="4" fill="hsl(152 60% 42% / 0.7)" />
+                  <rect x="300" y="85" width="40" height="25" rx="4" fill="hsl(199 89% 48% / 0.4)" />
+                </svg>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 0.8rem; color: hsl(var(--muted-foreground))">
+              指标口径见功能设计 · 实现阶段再定是否落库
+            </p>
+          </div>
+        </section>
+
+        <!-- 设置 -->
+        <section id="page-settings" class="page">
+          <div class="page-header">
+            <div>
+              <h1>设置</h1>
+              <p>账号 · HA 连接（Token 不明文展示）</p>
+            </div>
+          </div>
+          <div class="panel form-grid">
+            <div class="field">
+              <label>当前用户</label>
+              <input class="input" id="set-user" type="text" readonly value="演示用户" />
+            </div>
+            <div class="field">
+              <label>HA 连接状态</label>
+              <input class="input" id="set-ha-status" type="text" readonly value="已连接 · 模拟" />
+              <div class="hint">真实环境探测 GET /api/ 或 config</div>
+            </div>
+            <div class="field">
+              <label>HA Base URL（示意）</label>
+              <input class="input" type="text" value="http://192.168.1.10:8123" readonly />
+              <div class="hint">P0 可用环境变量；P1 可表单写入服务端</div>
+            </div>
+            <div class="field">
+              <label>Access Token</label>
+              <input class="input" type="password" value="••••••••••••••••" readonly />
+              <div class="hint">已配置 · 前端永不下发明文</div>
+            </div>
+            <div>
+              <button type="button" class="btn btn-outline" id="btn-toggle-ha">模拟 HA 断开/连接</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="bottom-nav" id="bottom-nav">
+      <button type="button" class="active" data-page="overview"><span class="nav-ico">⌂</span>总览</button>
+      <button type="button" data-page="devices"><span class="nav-ico">▦</span>设备</button>
+      <button type="button" data-page="add"><span class="nav-ico">＋</span>添加</button>
+      <button type="button" data-page="analytics"><span class="nav-ico">▣</span>分析</button>
+      <button type="button" data-page="settings"><span class="nav-ico">⚙</span>设置</button>
+    </nav>
+  </div>
+
+  <!-- 分析大屏 · 科技 HUD -->
+  <div id="view-wall" class="view-wall hidden">
+    <div class="hud-bg" aria-hidden="true">
+      <div class="hud-grid"></div>
+      <div class="hud-scan"></div>
+      <div class="hud-glow hud-glow-a"></div>
+      <div class="hud-glow hud-glow-b"></div>
+      <div class="hud-particles" id="hud-particles"></div>
+    </div>
+
+    <div class="hud-frame">
+      <header class="hud-header">
+        <div class="hud-brand">
+          <div class="hud-logo">
+            <span class="hud-logo-ring"></span>
+            <span class="hud-logo-core">SH</span>
+          </div>
+          <div>
+            <div class="hud-title">
+              <span class="hud-title-main">家庭运维中枢</span>
+              <span class="hud-title-sub">使用分析大屏</span>
+            </div>
+            <div class="hud-meta">
+              <span class="hud-live"><i></i>实时</span>
+              <span id="wall-kpi-ha">HA 已连接</span>
+              <span class="hud-sep">·</span>
+              <span>智能家居节点</span>
+            </div>
+          </div>
+        </div>
+        <div class="hud-header-right">
+          <div class="wall-range">
+            <button type="button" class="wall-chip active" data-wall-range="week">近 7 天</button>
+            <button type="button" class="wall-chip" data-wall-range="month">近 30 天</button>
+          </div>
+          <div class="hud-clock-block">
+            <div class="wall-clock" id="wall-clock">00:00:00</div>
+            <div class="hud-date" id="wall-date">—</div>
+          </div>
+          <button type="button" class="hud-exit" id="btn-wall-exit">退出大屏</button>
+        </div>
+      </header>
+
+      <div class="wall-kpi" id="wall-kpi">
+        <div class="wall-kpi-card" data-accent="cyan">
+          <div class="kpi-corner"></div>
+          <div class="k">开启总次数</div>
+          <div class="v" id="wall-kpi-count">128</div>
+          <div class="d up">▲ 较上期 +12%</div>
+        </div>
+        <div class="wall-kpi-card" data-accent="mint">
+          <div class="kpi-corner"></div>
+          <div class="k">累计开启时长</div>
+          <div class="v" id="wall-kpi-hours">46.2<span class="u">小时</span></div>
+          <div class="d">日均约 6.6 小时</div>
+        </div>
+        <div class="wall-kpi-card" data-accent="violet">
+          <div class="kpi-corner"></div>
+          <div class="k">用电粗算</div>
+          <div class="v" id="wall-kpi-kwh">18.4<span class="u">度</span></div>
+          <div class="d">需功率传感器</div>
+        </div>
+        <div class="wall-kpi-card" data-accent="amber">
+          <div class="kpi-corner"></div>
+          <div class="k">客厅均温</div>
+          <div class="v" id="wall-kpi-temp">24.1<span class="u">°</span></div>
+          <div class="d">湿度 52%</div>
+        </div>
+        <div class="wall-kpi-card" data-accent="pink">
+          <div class="kpi-corner"></div>
+          <div class="k">在线 / 开启</div>
+          <div class="v" id="wall-kpi-live">—</div>
+          <div class="d">当前设备快照</div>
+        </div>
+      </div>
+
+      <div class="wall-board">
+        <div class="wall-panel wall-panel-lg">
+          <div class="wall-panel-head">
+            <h2><span class="hud-h-bar"></span>每日开启时长</h2>
+            <span class="wall-tag">小时 / 天</span>
+          </div>
+          <div class="wall-bars" id="wall-bars"></div>
+          <div class="wall-axis" id="wall-bars-axis"></div>
+        </div>
+
+        <div class="wall-panel">
+          <div class="wall-panel-head">
+            <h2><span class="hud-h-bar"></span>设备使用排行</h2>
+            <span class="wall-tag">按时长</span>
+          </div>
+          <div class="wall-rank" id="wall-rank"></div>
+        </div>
+
+        <div class="wall-panel">
+          <div class="wall-panel-head">
+            <h2><span class="hud-h-bar"></span>类型占比</h2>
+            <span class="wall-tag">开启次数</span>
+          </div>
+          <div class="wall-donut-wrap">
+            <div class="hud-ring-wrap">
+              <svg class="wall-donut" viewBox="0 0 120 120" aria-hidden="true">
+                <defs>
+                  <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#22d3ee" />
+                    <stop offset="100%" stop-color="#3b82f6" />
+                  </linearGradient>
+                  <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#34d399" />
+                    <stop offset="100%" stop-color="#14b8a6" />
+                  </linearGradient>
+                  <linearGradient id="g3" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#c084fc" />
+                    <stop offset="100%" stop-color="#e879f9" />
+                  </linearGradient>
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="1.5" result="b" />
+                    <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                  </filter>
+                </defs>
+                <circle cx="60" cy="60" r="42" fill="none" stroke="rgba(34,211,238,0.08)" stroke-width="12" />
+                <circle class="ring-spin" cx="60" cy="60" r="50" fill="none" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 8" />
+                <circle cx="60" cy="60" r="42" fill="none" stroke="url(#g1)" stroke-width="12" stroke-linecap="round"
+                  stroke-dasharray="160 264" stroke-dashoffset="0" transform="rotate(-90 60 60)" filter="url(#glow)" />
+                <circle cx="60" cy="60" r="42" fill="none" stroke="url(#g2)" stroke-width="12" stroke-linecap="round"
+                  stroke-dasharray="70 264" stroke-dashoffset="-160" transform="rotate(-90 60 60)" filter="url(#glow)" />
+                <circle cx="60" cy="60" r="42" fill="none" stroke="url(#g3)" stroke-width="12" stroke-linecap="round"
+                  stroke-dasharray="34 264" stroke-dashoffset="-230" transform="rotate(-90 60 60)" filter="url(#glow)" />
+                <text x="60" y="56" text-anchor="middle" fill="#e0f2fe" font-size="12" font-weight="700">占比</text>
+                <text x="60" y="70" text-anchor="middle" fill="rgba(224,242,254,0.45)" font-size="8">类型</text>
+              </svg>
+            </div>
+            <div class="wall-donut-legend" id="wall-donut-legend"></div>
+          </div>
+        </div>
+
+        <div class="wall-panel wall-panel-lg">
+          <div class="wall-panel-head">
+            <h2><span class="hud-h-bar"></span>环境趋势</h2>
+            <span class="wall-tag">温度 · 湿度</span>
+          </div>
+          <div class="wall-line-chart">
+            <svg viewBox="0 0 640 160" preserveAspectRatio="none" class="wall-svg">
+              <defs>
+                <linearGradient id="areaCyan" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.35" />
+                  <stop offset="100%" stop-color="#22d3ee" stop-opacity="0" />
+                </linearGradient>
+                <filter id="lineGlow">
+                  <feGaussianBlur stdDeviation="2" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
+              <line x1="0" y1="40" x2="640" y2="40" stroke="rgba(34,211,238,0.08)" />
+              <line x1="0" y1="80" x2="640" y2="80" stroke="rgba(34,211,238,0.08)" />
+              <line x1="0" y1="120" x2="640" y2="120" stroke="rgba(34,211,238,0.08)" />
+              <polyline fill="url(#areaCyan)" stroke="none"
+                points="0,160 0,100 80,95 160,88 240,70 320,75 400,60 480,55 560,50 640,48 640,160" />
+              <polyline fill="none" stroke="#22d3ee" stroke-width="2.5" filter="url(#lineGlow)"
+                points="0,100 80,95 160,88 240,70 320,75 400,60 480,55 560,50 640,48" />
+              <polyline fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="5 4" filter="url(#lineGlow)"
+                points="0,50 80,55 160,48 240,60 320,52 400,58 480,45 560,50 640,42" />
+            </svg>
+            <div class="wall-legend">
+              <span><i style="background:#22d3ee;box-shadow:0 0 8px #22d3ee"></i>温度 ℃</span>
+              <span><i style="background:#34d399;box-shadow:0 0 8px #34d399"></i>湿度 %</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wall-panel wall-panel-full">
+          <div class="wall-panel-head">
+            <h2><span class="hud-h-bar"></span>活动热力</h2>
+            <span class="wall-tag">按小时 · 近 7 天</span>
+          </div>
+          <div class="wall-heat-wrap">
+            <div class="wall-heat-days" id="wall-heat-days"></div>
+            <div class="wall-heat-main">
+              <div class="wall-heat" id="wall-heat"></div>
+              <div class="wall-heat-labels">
+                <span>0时</span><span>3</span><span>6</span><span>9</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
+              </div>
+            </div>
+            <div class="wall-heat-scale">
+              <span>低</span>
+              <div class="wall-heat-scale-bar"></div>
+              <span>高</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="hud-footer">
+        <span>系统 · 智能家居服务</span>
+        <span class="hud-footer-pulse"></span>
+        <span>演示数据 · 非实时 HA</span>
+        <span class="hud-footer-pulse"></span>
+        <span id="hud-fps">渲染正常</span>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

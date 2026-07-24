@@ -1,24 +1,29 @@
 # smart-home 前端
 
-Vue 3 + Vite + TypeScript + Tailwind CSS。
+Vue 3 + Vite + TS + Tailwind · 视觉对齐 `docs/frontend/ui-prototype/`。
 
 ## 启动
 
 ```bash
-cd frontend
-pnpm install   # 或 npm install
-pnpm dev       # http://127.0.0.1:5175
+pnpm install
+pnpm dev
 ```
 
-代理：`/api` · `/oauth` → `http://127.0.0.1:3002`
+http://127.0.0.1:5175 · API 代理到 `:3002`
+
+## P0 页面
+
+| 路由 | 说明 |
+|------|------|
+| `/login` | SSO 入口 |
+| `/` | 总览状态墙 |
+| `/devices` | 设备列表 / 筛选 |
+| `/devices/:id` | 详情 + 开关 |
+| `/add` | HA 发现与纳入 |
+| `/settings` | 账号 + HA 状态 |
 
 ## 说明
 
-当前为工程骨架 + 连通性页。完整 UI 参考 `../docs/frontend/ui-prototype/`。
-
-## 移动端 / APK
-
-- **不新开项目**：业务继续写在本目录 `src/`。  
-- 需要安装包时：本工程接入 **Capacitor** → 构建 `dist` → 同步 `android/` → 出 APK。  
-- 说明文档：[`../docs/frontend/移动端与APK.md`](../docs/frontend/移动端与APK.md)。  
-- **现阶段**先做 Web；功能稳定后再初始化 Capacitor。
+- Cookie 会话：`credentials: 'include'`；401 → `/oauth/login`
+- 开发请统一用 `127.0.0.1`（勿混 localhost）
+- 移动端 APK：见 `../docs/frontend/移动端与APK.md`（Web 稳定后再 Capacitor）

@@ -1,6 +1,7 @@
 package hass
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,14 @@ import (
 	"strings"
 	"time"
 )
+
+type State struct {
+	EntityID    string         `json:"entity_id"`
+	State       string         `json:"state"`
+	Attributes  map[string]any `json:"attributes"`
+	LastChanged string         `json:"last_changed"`
+	LastUpdated string         `json:"last_updated"`
+}
 
 type Client struct {
 	baseURL    string
@@ -33,16 +42,31 @@ func (c *Client) Configured() bool {
 	return c != nil && c.baseURL != "" && c.token != ""
 }
 
-func (c *Client) Ping(ctx context.Context) error {
+func (c *Client) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	if !c.Configured() {
-		return fmt.Errorf("hass not configured")
+		return nil, fmt.Errorf("hass not configured")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/", nil)
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, rdr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.httpClient.Do(req)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return c.httpClient.Do(req)
+}
+
+func (c *Client) Ping(ctx context.Context) error {
+	resp, err := c.do(ctx, http.MethodGet, "/api/", nil)
 	if err != nil {
 		return err
 	}
@@ -54,17 +78,8 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// GetStates 拉取全部实体状态（后续业务用）
-func (c *Client) GetStates(ctx context.Context) ([]map[string]any, error) {
-	if !c.Configured() {
-		return nil, fmt.Errorf("hass not configured")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/states", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.httpClient.Do(req)
+func (c *Client) GetStates(ctx context.Context) ([]State, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/api/states", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -73,9 +88,62 @@ func (c *Client) GetStates(ctx context.Context) ([]map[string]any, error) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("hass states %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
-	var out []map[string]any
+	var out []State
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+	for i := range out {
+		if out[i].Attributes == nil {
+			out[i].Attributes = map[string]any{}
+		}
+	}
 	return out, nil
 }
+
+func (c *Client) GetState(ctx context.Context, entityID string) (*State, error) {
+	if entityID == "" {
+		return nil, fmt.Errorf("entity_id required")
+	}
+	resp, err := c.do(ctx, http.MethodGet, "/api/states/"+entityID, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrEntityNotFound
+	}
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("hass state %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var st State
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return nil, err
+	}
+	if st.Attributes == nil {
+		st.Attributes = map[string]any{}
+	}
+	return &st, nil
+}
+
+// CallService posts to /api/services/{domain}/{service}
+func (c *Client) CallService(ctx context.Context, domain, service string, data map[string]any) error {
+	if domain == "" || service == "" {
+		return fmt.Errorf("domain and service required")
+	}
+	if data == nil {
+		data = map[string]any{}
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/api/services/"+domain+"/"+service, data)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("hass service %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+var ErrEntityNotFound = fmt.Errorf("entity not found")

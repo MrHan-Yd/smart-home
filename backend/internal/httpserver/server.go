@@ -9,23 +9,52 @@ import (
 	"time"
 
 	"github.com/demo/smart-home/backend/internal/adapter/hass"
+	"github.com/demo/smart-home/backend/internal/auth"
 	"github.com/demo/smart-home/backend/internal/config"
+	"github.com/demo/smart-home/backend/internal/middleware"
+	"github.com/demo/smart-home/backend/internal/module/device"
+	"github.com/demo/smart-home/backend/internal/module/home"
+	"github.com/demo/smart-home/backend/internal/module/user"
 	"github.com/demo/smart-home/backend/internal/pkg/response"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 type Server struct {
-	cfg  config.Config
-	log  *slog.Logger
-	db   *pgxpool.Pool
-	rdb  *redis.Client
-	hass *hass.Client
-	mux  *http.ServeMux
+	cfg      config.Config
+	log      *slog.Logger
+	db       *pgxpool.Pool
+	rdb      *redis.Client
+	hass     *hass.Client
+	sessions *auth.Store
+	oauth    *auth.OAuthClient
+	jwks     *auth.JWKS
+	authMW   *middleware.Auth
+	users    *user.Repo
+	homes    *home.Repo
+	devices  *device.Repo
+	mux      *http.ServeMux
 }
 
 func New(cfg config.Config, log *slog.Logger, db *pgxpool.Pool, rdb *redis.Client, ha *hass.Client) *Server {
-	s := &Server{cfg: cfg, log: log, db: db, rdb: rdb, hass: ha, mux: http.NewServeMux()}
+	sessions := auth.NewStore(rdb, cfg.SessionTTL)
+	oauth := auth.NewOAuthClient(cfg)
+	jwks := auth.NewJWKS(cfg.AuthBase + "/jwks.json")
+	s := &Server{
+		cfg:      cfg,
+		log:      log,
+		db:       db,
+		rdb:      rdb,
+		hass:     ha,
+		sessions: sessions,
+		oauth:    oauth,
+		jwks:     jwks,
+		authMW:   middleware.NewAuth(cfg, sessions, oauth, jwks, log),
+		users:    user.NewRepo(db),
+		homes:    home.NewRepo(db),
+		devices:  device.NewRepo(db),
+		mux:      http.NewServeMux(),
+	}
 	s.routes()
 	return s
 }
@@ -37,8 +66,24 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
+
+	s.mux.HandleFunc("GET /oauth/login", s.handleOAuthLogin)
+	s.mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
+	s.mux.HandleFunc("GET /oauth/complete", s.handleOAuthComplete)
+	s.mux.HandleFunc("POST /oauth/logout", s.handleOAuthLogout)
+
 	s.mux.HandleFunc("GET /api/v1/ha/status", s.handleHAStatus)
 	s.mux.HandleFunc("GET /api/v1/meta", s.handleMeta)
+
+	s.mux.Handle("GET /api/v1/me", s.authMW.Require(http.HandlerFunc(s.handleMe)))
+	s.mux.Handle("GET /api/v1/discover/entities", s.authMW.Require(http.HandlerFunc(s.handleDiscoverEntities)))
+	s.mux.Handle("GET /api/v1/devices", s.authMW.Require(http.HandlerFunc(s.handleListDevices)))
+	s.mux.Handle("POST /api/v1/devices", s.authMW.Require(http.HandlerFunc(s.handleCreateDevice)))
+	s.mux.Handle("POST /api/v1/devices/batch", s.authMW.Require(http.HandlerFunc(s.handleBatchCreateDevices)))
+	s.mux.Handle("GET /api/v1/devices/{id}", s.authMW.Require(http.HandlerFunc(s.handleGetDevice)))
+	s.mux.Handle("PATCH /api/v1/devices/{id}", s.authMW.Require(http.HandlerFunc(s.handlePatchDevice)))
+	s.mux.Handle("DELETE /api/v1/devices/{id}", s.authMW.Require(http.HandlerFunc(s.handleDeleteDevice)))
+	s.mux.Handle("POST /api/v1/devices/{id}/actions", s.authMW.Require(http.HandlerFunc(s.handleDeviceAction)))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -86,7 +131,6 @@ func (s *Server) handleHAStatus(w http.ResponseWriter, r *http.Request) {
 		response.OK(w, out)
 		return
 	}
-	// 不暴露完整 URL 中的敏感路径；仅 host 方便排查
 	out["base_url_host"] = trimURLHost(s.cfg.HassBaseURL)
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.HassTimeout)
@@ -106,9 +150,11 @@ func (s *Server) handleHAStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
 	response.OK(w, map[string]any{
-		"service":         "smart-home-service",
-		"auth_portal_url": s.cfg.AuthPortalURL,
-		"app_base_url":    s.cfg.AppBaseURL,
+		"service":          "smart-home-service",
+		"auth_portal_url":  s.cfg.AuthPortalURL,
+		"app_base_url":     s.cfg.AppBaseURL,
+		"session_ttl_sec":  int(s.cfg.SessionTTL.Seconds()),
+		"session_idle_sec": int(s.cfg.SessionIdle.Seconds()),
 	})
 }
 

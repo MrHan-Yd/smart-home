@@ -15,12 +15,6 @@ Desktop.ini
 *.sw?
 *~
 
-# --- Env / secrets ---
-.env
-.env.*
-!.env.example
-!**/.env.example
-
 # --- Logs ---
 logs/
 *.log
@@ -48,8 +42,15 @@ frontend/android/.idea/
 frontend/ios/App/Pods/
 frontend/ios/DerivedData/
 
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+
 # --- Backend (Go) ---
 backend/bin/
+backend/.gocache/
 backend/tmp/
 backend/vendor/
 *.exe

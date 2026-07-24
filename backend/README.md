@@ -2,31 +2,52 @@
 
 Go BFF · 统一认证 + Home Assistant。设计见 `../docs/backend/`。
 
-## 已有
+## 已实现（P0）
 
-| 模块 | 说明 |
-|------|------|
+| 模块 | 路径 / 说明 |
+|------|-------------|
 | health | `GET /healthz` · `GET /readyz` |
-| meta | `GET /api/v1/meta` |
-| HA | `GET /api/v1/ha/status` · `internal/adapter/hass` |
-| 配置 | OAuth / PG / Redis / HA 环境变量 |
-| 迁移 | `migrations/001_init.sql` |
+| OAuth | `GET /oauth/login` · `/callback` · `/complete` · `POST /oauth/logout` |
+| me | `GET /api/v1/me`（含默认 home） |
+| meta / HA | `GET /api/v1/meta` · `GET /api/v1/ha/status` |
+| 发现 | `GET /api/v1/discover/entities` |
+| 设备 | CRUD + batch · `POST /api/v1/devices/{id}/actions` |
+| Session | Cookie `sh_sid` + Redis；PKCE；refresh 单飞 |
 
 ## 启动
 
-```bash
+```powershell
 cd backend
-cp .env.example .env
+# 编辑 .env（OAuth client_id/secret、DATABASE_URL、REDIS_URL）
 # 建库：CREATE DATABASE smart_home;
-# psql "$DATABASE_URL" -f migrations/001_init.sql
+# psql ... -f migrations/001_init.sql
+# IdP redirect 须为：http://127.0.0.1:3002/oauth/callback
 
-go mod tidy
+.\run.ps1
+# 或：
+$env:GOTOOLCHAIN = "local"
+$env:GOPROXY = "https://goproxy.cn,direct"
 go run ./cmd/server
 ```
 
-默认 `0.0.0.0:3002`。未配置 HA Token 也可启动（`READYZ_REQUIRE_HA=false`）。
+默认 `0.0.0.0:3002`。未配置 HA Token 可启动（`READYZ_REQUIRE_HA=false`）。
 
-## 下一步
+### Go 版本（与 ProjectManagement 统一）
 
-- OAuth 登录（对齐 PM / 认证契约）
-- 发现实体 · 设备 CRUD · actions
+| 项 | 值 |
+|----|-----|
+| `go.mod` | `go 1.24` + `toolchain go1.24.3` |
+| 启动 | `.\run.ps1` 或 `.\start.cmd`（会拉/用 go1.24.3，再 `bin\server.exe`） |
+
+本机即使装了 Go 1.26，也会按 `toolchain` 使用 **1.24.3**，与 PM 一致。
+
+## 目录
+
+```
+internal/
+  auth/           # session · oauth · jwks
+  middleware/     # Require session
+  module/user|home|device
+  adapter/hass/   # REST + capability + action map
+  httpserver/
+```

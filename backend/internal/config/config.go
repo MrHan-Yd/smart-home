@@ -75,7 +75,7 @@ func Load() (Config, error) {
 		LogLevel:   getenv("LOG_LEVEL", "info"),
 
 		AuthBase:          strings.TrimRight(getenv("AUTH_BASE", "http://127.0.0.1:3000"), "/"),
-		OAuthClientID:     getenv("OAUTH_CLIENT_ID", "smart_home"),
+		OAuthClientID:     getenv("OAUTH_CLIENT_ID", "app_696b1b"),
 		OAuthClientSecret: getenv("OAUTH_CLIENT_SECRET", ""),
 		OAuthRedirectURI:  getenv("OAUTH_REDIRECT_URI", "http://127.0.0.1:3002/oauth/callback"),
 		OAuthIssuer:       strings.TrimRight(getenv("OAUTH_ISSUER", "http://127.0.0.1:3000"), "/"),

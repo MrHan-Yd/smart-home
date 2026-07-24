@@ -1,47 +1,22 @@
 @import "tailwindcss";
+@import "./styles/prototype.css";
 
-:root,
-html[data-theme="dark"] {
-  --background: 222 28% 7%;
-  --foreground: 210 20% 96%;
-  --card: 222 22% 10%;
-  --card-hover: 222 20% 13%;
-  --muted: 222 14% 16%;
-  --muted-foreground: 215 12% 58%;
-  --border: 222 14% 18%;
-  --primary: 199 89% 48%;
-  --primary-foreground: 0 0% 100%;
-  --destructive: 0 72% 51%;
-  --success: 152 60% 42%;
-  color-scheme: dark;
+/* Vue RouterLink in sidebar already styled via .nav-item */
+a.nav-item {
+  text-decoration: none;
 }
 
-html[data-theme="light"] {
-  --background: 210 20% 98%;
-  --foreground: 222 28% 12%;
-  --card: 0 0% 100%;
-  --card-hover: 210 20% 96%;
-  --muted: 210 16% 93%;
-  --muted-foreground: 215 12% 40%;
-  --border: 214 16% 88%;
-  --primary: 199 89% 40%;
-  --primary-foreground: 0 0% 100%;
+/* ensure --destructive alias for toast */
+:root,
+html[data-theme="dark"] {
   --destructive: 0 72% 51%;
-  --success: 152 55% 32%;
-  color-scheme: light;
+}
+html[data-theme="light"] {
+  --destructive: 0 72% 51%;
 }
 
 html,
 body,
 #app {
   min-height: 100dvh;
-}
-
-body {
-  margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  -webkit-font-smoothing: antialiased;
 }
